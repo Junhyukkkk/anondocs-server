@@ -116,4 +116,16 @@ public class DiaryService{
         return diaryRepository.findByVisibilityAndDeletedFalse(DiaryVisibility.ANONYMOUS, sorted);
     }
 
+    public Diary updateDiaryContentLww(Long userId, Long diaryId, String content) {
+        Diary diary = diaryRepository.findById(diaryId)
+                .orElseThrow(() -> new EntityNotFoundException("일기를 찾을 수 없습니다."));
+
+        if (diary.getUser().getId() != userId) {
+            throw new SecurityException("본인의 일기만 수정할 수 있습니다.");
+        }
+
+        diary.changeContent(content); // 엔티티 메서드
+        return diary;
+    }
+
 }
