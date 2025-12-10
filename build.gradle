@@ -38,6 +38,7 @@ dependencies {
 	// Spring Boot Test (MockMvc, @AutoConfigureMockMvc 등 포함)
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.springframework.security:spring-security-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-websocket'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
 

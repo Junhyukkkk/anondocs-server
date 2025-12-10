@@ -33,7 +33,8 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/api/auth/**",        // 회원가입/로그인
                                 "/health",             // 헬스 체크 등
-                                "/actuator/health"
+                                "/actuator/health",
+                                "/ws/**"               // WebSocket 엔드포인트 (핸드셰이크)
                         ).permitAll()
                         .anyRequest().authenticated() // 나머지는 전부 인증 필요
                 )
