@@ -15,4 +15,5 @@ public class DiaryEditBroadcastMessageDto {
     private String content;
     private Long editorUserId;
     private String editorNickname;
+    private Long version;
 }

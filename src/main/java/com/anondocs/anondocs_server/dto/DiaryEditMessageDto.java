@@ -1,6 +1,7 @@
 package com.anondocs.anondocs_server.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -14,4 +15,7 @@ public class DiaryEditMessageDto {
 
     @NotBlank
     private String content;
+
+    @NotNull
+    private Long version;
 }

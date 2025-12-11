@@ -20,6 +20,10 @@ public class Diary extends BaseTimeEntity {
     @GeneratedValue
     private Long id;
 
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
+
     // 작성자 (외부 노출x)
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "user_id", nullable = false)
