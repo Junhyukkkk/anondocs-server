@@ -12,4 +12,8 @@ public class DiaryVersionConflictException extends RuntimeException {
         super(message);
         this.serverVersion = serverVersion;
     }
+
+    public Long getCurrentVersion() {
+        return serverVersion;
+    }
 }
