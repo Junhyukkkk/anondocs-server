@@ -6,7 +6,7 @@ import com.anondocs.anondocs_server.domain.diary.DiaryVisibility;
 import com.anondocs.anondocs_server.domain.user.User;
 import com.anondocs.anondocs_server.domain.user.UserStatus;
 import com.anondocs.anondocs_server.dto.DiaryEditBroadcastMessageDto;
-import com.anondocs.anondocs_server.dto.DiaryEditMessageDto;
+import com.anondocs.anondocs_server.dto.DiaryEditLwwMessageDto;
 import com.anondocs.anondocs_server.repository.DiaryRepository;
 import com.anondocs.anondocs_server.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -100,7 +100,7 @@ class DiaryRealTimeIntegrationTest {
     }
 
     @Test
-    @DisplayName("실시간 일기 편집 - 단일 사용자 수정")
+    @DisplayName("실시간 일기 편집(LWW) - 단일 사용자 수정")
     void testSingleUserEdit() throws Exception {
         // Given
         BlockingQueue<DiaryEditBroadcastMessageDto> messageQueue = new LinkedBlockingQueue<>();
@@ -124,12 +124,12 @@ class DiaryRealTimeIntegrationTest {
         // 구독이 완료될 때까지 대기
         Thread.sleep(500);
 
-        // When - 메시지 발행
-        DiaryEditMessageDto editMessage = new DiaryEditMessageDto();
+        // When - 메시지 발행 (LWW 방식)
+        DiaryEditLwwMessageDto editMessage = new DiaryEditLwwMessageDto();
         editMessage.setDiaryId(sharedDiary.getId());
         editMessage.setContent("사용자1이 수정한 내용");
 
-        session.send("/app/diaries/" + sharedDiary.getId() + "/edit", editMessage);
+        session.send("/app/diaries/" + sharedDiary.getId() + "/edit-lww", editMessage);
 
         // Then - 브로드캐스트 메시지 수신 확인
         DiaryEditBroadcastMessageDto received = messageQueue.poll(5, TimeUnit.SECONDS);
@@ -148,17 +148,15 @@ class DiaryRealTimeIntegrationTest {
     }
 
     @Test
-    @DisplayName("실시간 일기 편집 - LWW(Last Write Wins) 동작 확인")
+    @DisplayName("실시간 일기 편집(LWW) - Last Write Wins 동작 확인")
     void testLastWriteWins() throws Exception {
         // Given
         BlockingQueue<DiaryEditBroadcastMessageDto> messageQueue = new LinkedBlockingQueue<>();
-        WebSocketStompClient stompClient1 = createStompClient();
-        WebSocketStompClient stompClient2 = createStompClient();
+        WebSocketStompClient stompClient = createStompClient();
 
-        StompSession session1 = connectWithAuth(stompClient1, accessToken1);
-        StompSession session2 = connectWithAuth(stompClient2, accessToken2);
+        StompSession session = connectWithAuth(stompClient, accessToken1);
 
-        // 두 세션 모두 구독
+        // 구독
         StompFrameHandler handler = new StompFrameHandler() {
             @Override
             public Type getPayloadType(StompHeaders headers) {
@@ -171,46 +169,43 @@ class DiaryRealTimeIntegrationTest {
             }
         };
 
-        session1.subscribe("/topic/diaries/" + sharedDiary.getId(), handler);
-        session2.subscribe("/topic/diaries/" + sharedDiary.getId(), handler);
+        session.subscribe("/topic/diaries/" + sharedDiary.getId(), handler);
 
-        // When - User1이 먼저 수정
-        DiaryEditMessageDto edit1 = new DiaryEditMessageDto();
+        // When - User1이 먼저 수정 (LWW 방식)
+        DiaryEditLwwMessageDto edit1 = new DiaryEditLwwMessageDto();
         edit1.setDiaryId(sharedDiary.getId());
-        edit1.setContent("User1의 수정");
+        edit1.setContent("첫 번째 수정");
 
-        session1.send("/app/diaries/" + sharedDiary.getId() + "/edit", edit1);
+        session.send("/app/diaries/" + sharedDiary.getId() + "/edit-lww", edit1);
         Thread.sleep(100); // 순서 보장을 위한 짧은 대기
 
-        // User2가 나중에 수정
-        DiaryEditMessageDto edit2 = new DiaryEditMessageDto();
+        // User1이 다시 수정 (마지막 수정이 승리)
+        DiaryEditLwwMessageDto edit2 = new DiaryEditLwwMessageDto();
         edit2.setDiaryId(sharedDiary.getId());
-        edit2.setContent("User2의 수정 - 최종본");
+        edit2.setContent("두 번째 수정 - 최종본");
 
-        session2.send("/app/diaries/" + sharedDiary.getId() + "/edit", edit2);
+        session.send("/app/diaries/" + sharedDiary.getId() + "/edit-lww", edit2);
 
         // Then - 두 개의 브로드캐스트 메시지 수신
         DiaryEditBroadcastMessageDto msg1 = messageQueue.poll(5, TimeUnit.SECONDS);
         assertThat(msg1).isNotNull();
-        assertThat(msg1.getContent()).isEqualTo("User1의 수정");
+        assertThat(msg1.getContent()).isEqualTo("첫 번째 수정");
 
         DiaryEditBroadcastMessageDto msg2 = messageQueue.poll(5, TimeUnit.SECONDS);
         assertThat(msg2).isNotNull();
-        assertThat(msg2.getContent()).isEqualTo("User2의 수정 - 최종본");
-        assertThat(msg2.getEditorUserId()).isEqualTo(user2.getId());
+        assertThat(msg2.getContent()).isEqualTo("두 번째 수정 - 최종본");
+        assertThat(msg2.getEditorUserId()).isEqualTo(user1.getId());
 
         // DB에는 마지막 수정이 반영됨 (LWW)
         Diary finalDiary = diaryRepository.findById(sharedDiary.getId()).orElseThrow();
-        assertThat(finalDiary.getContent()).isEqualTo("User2의 수정 - 최종본");
+        assertThat(finalDiary.getContent()).isEqualTo("두 번째 수정 - 최종본");
 
-        session1.disconnect();
-        session2.disconnect();
-        stompClient1.stop();
-        stompClient2.stop();
+        session.disconnect();
+        stompClient.stop();
     }
 
     @Test
-    @DisplayName("실시간 일기 편집 - 연속적인 수정 테스트")
+    @DisplayName("실시간 일기 편집(LWW) - 연속적인 수정 테스트")
     void testConsecutiveEdits() throws Exception {
         // Given
         BlockingQueue<DiaryEditBroadcastMessageDto> messageQueue = new LinkedBlockingQueue<>();
@@ -229,7 +224,7 @@ class DiaryRealTimeIntegrationTest {
             }
         });
 
-        // When - 여러 번 연속 수정
+        // When - 여러 번 연속 수정 (LWW 방식)
         String[] edits = {
                 "첫 번째 수정",
                 "두 번째 수정",
@@ -238,11 +233,11 @@ class DiaryRealTimeIntegrationTest {
         };
 
         for (String content : edits) {
-            DiaryEditMessageDto editMessage = new DiaryEditMessageDto();
+            DiaryEditLwwMessageDto editMessage = new DiaryEditLwwMessageDto();
             editMessage.setDiaryId(sharedDiary.getId());
             editMessage.setContent(content);
 
-            session.send("/app/diaries/" + sharedDiary.getId() + "/edit", editMessage);
+            session.send("/app/diaries/" + sharedDiary.getId() + "/edit-lww", editMessage);
             Thread.sleep(50); // 메시지 순서 보장
         }
 
@@ -262,7 +257,7 @@ class DiaryRealTimeIntegrationTest {
     }
 
     @Test
-    @DisplayName("실시간 일기 편집 - 권한 없는 사용자의 수정 시도")
+    @DisplayName("실시간 일기 편집(LWW) - 권한 없는 사용자의 수정 시도")
     void testUnauthorizedEdit() throws Exception {
         // Given
         User unauthorizedUser = User.builder()
@@ -291,13 +286,13 @@ class DiaryRealTimeIntegrationTest {
             }
         });
 
-        // When - 권한 없는 사용자가 수정 시도
-        DiaryEditMessageDto editMessage = new DiaryEditMessageDto();
+        // When - 권한 없는 사용자가 수정 시도 (LWW 방식)
+        DiaryEditLwwMessageDto editMessage = new DiaryEditLwwMessageDto();
         editMessage.setDiaryId(sharedDiary.getId());
         editMessage.setContent("권한 없는 수정 시도");
 
         try {
-            session.send("/app/diaries/" + sharedDiary.getId() + "/edit", editMessage);
+            session.send("/app/diaries/" + sharedDiary.getId() + "/edit-lww", editMessage);
             Thread.sleep(1000); // 에러 발생 대기
         } catch (Exception e) {
             // 예외 발생 예상
@@ -316,7 +311,7 @@ class DiaryRealTimeIntegrationTest {
     }
 
     @Test
-    @DisplayName("실시간 일기 편집 - 동시 편집 시 마지막 승리 확인")
+    @DisplayName("실시간 일기 편집(LWW) - 동시 편집 시 마지막 승리 확인")
     void testConcurrentEditsLastWins() throws Exception {
         // Given
         BlockingQueue<DiaryEditBroadcastMessageDto> messageQueue = new LinkedBlockingQueue<>();
@@ -341,18 +336,18 @@ class DiaryRealTimeIntegrationTest {
         session1.subscribe("/topic/diaries/" + sharedDiary.getId(), handler);
         session2.subscribe("/topic/diaries/" + sharedDiary.getId(), handler);
 
-        // When - 거의 동시에 수정 (실제로는 순서가 있음)
-        DiaryEditMessageDto edit1 = new DiaryEditMessageDto();
+        // When - 거의 동시에 수정 (실제로는 순서가 있음) (LWW 방식)
+        DiaryEditLwwMessageDto edit1 = new DiaryEditLwwMessageDto();
         edit1.setDiaryId(sharedDiary.getId());
         edit1.setContent("동시 수정 1");
 
-        DiaryEditMessageDto edit2 = new DiaryEditMessageDto();
+        DiaryEditLwwMessageDto edit2 = new DiaryEditLwwMessageDto();
         edit2.setDiaryId(sharedDiary.getId());
         edit2.setContent("동시 수정 2 - 승리");
 
         // 거의 동시에 전송
-        session1.send("/app/diaries/" + sharedDiary.getId() + "/edit", edit1);
-        session2.send("/app/diaries/" + sharedDiary.getId() + "/edit", edit2);
+        session1.send("/app/diaries/" + sharedDiary.getId() + "/edit-lww", edit1);
+        session2.send("/app/diaries/" + sharedDiary.getId() + "/edit-lww", edit2);
 
         // Then - 두 메시지 모두 수신
         DiaryEditBroadcastMessageDto msg1 = messageQueue.poll(5, TimeUnit.SECONDS);
