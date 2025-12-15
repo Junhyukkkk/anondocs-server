@@ -1,5 +1,6 @@
 package com.anondocs.anondocs_server.domain.diary;
 
+import com.anondocs.anondocs_server.config.EncryptedStringConverter;
 import com.anondocs.anondocs_server.domain.BaseTimeEntity;
 import com.anondocs.anondocs_server.domain.ai.DiaryAiResult;
 import com.anondocs.anondocs_server.domain.user.User;
@@ -29,11 +30,13 @@ public class Diary extends BaseTimeEntity {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @Column(length = 255)
+    @Column(length = 1000)
+    @Convert(converter = EncryptedStringConverter.class)
     private String title;
 
     @Lob
     @Column(nullable = false)
+    @Convert(converter = EncryptedStringConverter.class)
     private String content;
 
     @Enumerated(EnumType.STRING)
