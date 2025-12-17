@@ -49,6 +49,8 @@ dependencies {
 
 	// Jackson for JSON processing in tests
 	testImplementation 'com.fasterxml.jackson.core:jackson-databind'
+
+	implementation'org.springframework.boot:spring-boot-starter-data-redis'
 }
 
 tasks.named('test') {
